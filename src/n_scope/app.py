@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 from rich.markup import escape
@@ -9,7 +8,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widgets import DataTable, Footer, Header, Static
 
-from .git import RepoStatus, find_repos, gather_status
+from .git import RepoStatus, find_repos, gather_all
 
 
 def status_cell(repo: RepoStatus) -> Text:
@@ -26,6 +25,10 @@ def status_cell(repo: RepoStatus) -> Text:
         chunks.append(Text(f"↓{repo.behind}", style="bold magenta"))
     if repo.detached:
         chunks.append(Text("detached", style="bold red"))
+    elif repo.bare:
+        chunks.append(Text("bare", style="bold blue"))
+    elif not repo.upstream:
+        chunks.append(Text("no upstream", style="bold blue"))
     out = Text()
     for i, c in enumerate(chunks):
         if i:
@@ -108,7 +111,7 @@ class NScopeApp(App):
             )
             return
 
-        self.repos = await asyncio.gather(*(gather_status(p) for p in paths))
+        self.repos = await gather_all(paths)
         self._sort()
         self.populate_table()
 
