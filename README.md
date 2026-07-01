@@ -1,5 +1,7 @@
 # n-scope
 
+[![CI](https://github.com/naevor/n-scope/actions/workflows/ci.yml/badge.svg)](https://github.com/naevor/n-scope/actions/workflows/ci.yml)
+
 > Pretty TUI for surveying git repositories — see what's dirty, ahead, behind, or stale across all your projects at a glance.
 
 ## Features
@@ -10,7 +12,7 @@
 - Live filtering (`d` for dirty-only, `a` for all)
 - Sort by status or name
 - Detail panel for the selected repo (path, remote, stashes, full numbers)
-- Async git calls — scans dozens of repos in parallel
+- Bounded async git calls — scans dozens of repos without overwhelming the system
 
 ## Install
 
@@ -49,20 +51,12 @@ python -m n_scope ~/projects
 | `S`       | sort by status        |
 | `q`       | quit                  |
 
-## Roadmap
-
-- [x] core scanner + TUI
-- [x] proper package layout, `n-scope` console script
-- [ ] diff preview in the detail panel
-- [ ] batch operations (multi-select + `git fetch` etc.)
-- [ ] sqlite snapshot persistence + history charts
-- [ ] alternative themes (BIOS / CRT terminal aesthetic)
-
 ## Development
 
 ```bash
 pip install -e ".[dev]"
 ruff check .
+pytest
 ```
 
 ## License
