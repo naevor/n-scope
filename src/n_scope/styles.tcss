@@ -1,0 +1,25 @@
+Screen {
+    background: $surface;
+}
+
+#header_bar {
+    height: 1;
+    background: $primary;
+    color: $text;
+    padding: 0 1;
+}
+
+#header_bar.scanning {
+    background: $warning 30%;
+}
+
+DataTable {
+    height: 1fr;
+}
+
+#detail {
+    height: 8;
+    border-top: heavy $primary;
+    background: $boost;
+    padding: 1 2;
+}
