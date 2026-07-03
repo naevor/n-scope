@@ -13,6 +13,15 @@ Screen {
     background: $warning 30%;
 }
 
+#filter_input {
+    display: none;
+    margin: 0 1;
+}
+
+#filter_input.active {
+    display: block;
+}
+
 DataTable {
     height: 1fr;
 }

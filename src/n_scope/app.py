@@ -6,9 +6,9 @@ from rich.markup import escape
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.widgets import DataTable, Footer, Header, Static
+from textual.widgets import DataTable, Footer, Header, Input, Static
 
-from .git import RepoStatus, find_repos_many, gather_all
+from .git import RepoStatus, find_repos_many, iter_statuses
 
 
 def status_cell(repo: RepoStatus) -> Text:
@@ -55,6 +55,17 @@ def changes_cell(repo: RepoStatus) -> Text:
     return out
 
 
+def fuzzy_match(query: str, candidate: str) -> bool:
+    needle = query.casefold().strip()
+    if not needle:
+        return True
+    haystack = candidate.casefold()
+    if needle in haystack:
+        return True
+    characters = iter(haystack)
+    return all(character in characters for character in needle)
+
+
 class NScopeApp(App):
     CSS_PATH = "styles.tcss"
     TITLE = "n-scope"
@@ -65,6 +76,8 @@ class NScopeApp(App):
         Binding("enter", "show_detail", "Detail", priority=True),
         Binding("d", "filter_dirty", "Dirty only"),
         Binding("a", "filter_all", "Show all"),
+        Binding("slash", "open_filter", "Filter", key_display="/"),
+        Binding("escape", "close_filter", "Clear filter", show=False),
         Binding("s", "sort_name", "Sort: name"),
         Binding("S", "sort_status", "Sort: status"),
     ]
@@ -89,6 +102,7 @@ class NScopeApp(App):
         self.max_depth = max_depth
         self.repos: list[RepoStatus] = []
         self.filter_mode = "all"
+        self.filter_query = ""
         self.sort_mode = sort_mode
 
     @property
@@ -100,20 +114,32 @@ class NScopeApp(App):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield Static("", id="header_bar")
+        yield Input(
+            placeholder="Filter repositories…",
+            id="filter_input",
+            disabled=True,
+        )
         yield DataTable(zebra_stripes=True, cursor_type="row", id="repos")
         yield Static(
             "[dim]select a repo and press Enter for details[/]", id="detail"
         )
         yield Footer()
 
-    async def on_mount(self) -> None:
+    def on_mount(self) -> None:
         table = self.query_one("#repos", DataTable)
         table.add_columns(
             "Repo", "Branch", "Status", "Changes", "Last commit", "When"
         )
-        await self.action_refresh()
+        self.action_refresh()
 
-    async def action_refresh(self) -> None:
+    def action_refresh(self) -> None:
+        self.run_worker(
+            self._scan_repositories(),
+            group="repository-scan",
+            exclusive=True,
+        )
+
+    async def _scan_repositories(self) -> None:
         bar = self.query_one("#header_bar", Static)
         bar.add_class("scanning")
         bar.update(
@@ -131,7 +157,19 @@ class NScopeApp(App):
             )
             return
 
-        self.repos = await gather_all(paths)
+        self.repos = []
+        self.populate_table()
+        total = len(paths)
+        async for repo in iter_statuses(paths):
+            self.repos.append(repo)
+            self._sort()
+            self.populate_table()
+            bar.update(
+                f"[bold]n-scope[/] · scanning "
+                f"[cyan]{escape(self.roots_label)}[/] · "
+                f"[bold]{len(self.repos)}/{total}[/]"
+            )
+
         self._sort()
         self.populate_table()
 
@@ -161,6 +199,8 @@ class NScopeApp(App):
         table.clear()
         for r in self.repos:
             if self.filter_mode == "dirty" and not r.is_dirty:
+                continue
+            if not fuzzy_match(self.filter_query, r.name):
                 continue
             table.add_row(
                 Text(r.name, style="bold"),
@@ -218,6 +258,34 @@ class NScopeApp(App):
     def action_filter_all(self) -> None:
         self.filter_mode = "all"
         self.populate_table()
+
+    def action_open_filter(self) -> None:
+        filter_input = self.query_one("#filter_input", Input)
+        filter_input.disabled = False
+        filter_input.add_class("active")
+        filter_input.focus()
+        filter_input.cursor_position = len(filter_input.value)
+
+    def action_close_filter(self) -> None:
+        filter_input = self.query_one("#filter_input", Input)
+        if not filter_input.has_class("active") and not self.filter_query:
+            return
+        filter_input.value = ""
+        filter_input.remove_class("active")
+        filter_input.disabled = True
+        self.filter_query = ""
+        self.populate_table()
+        self.query_one("#repos", DataTable).focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id != "filter_input":
+            return
+        self.filter_query = event.value
+        self.populate_table()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "filter_input":
+            self.query_one("#repos", DataTable).focus()
 
     def action_sort_name(self) -> None:
         self.sort_mode = "name"

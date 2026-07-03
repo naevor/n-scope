@@ -12,6 +12,7 @@ from n_scope.git import (
     find_repos_many,
     gather_all,
     gather_status,
+    iter_statuses,
 )
 
 
@@ -249,3 +250,29 @@ def test_gather_all_limits_concurrency_and_preserves_order(
 def test_gather_all_rejects_invalid_limit() -> None:
     with pytest.raises(ValueError, match="at least 1"):
         asyncio.run(gather_all([], limit=0))
+
+
+def test_iter_statuses_yields_results_as_they_complete(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    async def delayed_status(path: Path) -> RepoStatus:
+        await asyncio.sleep(int(path.name) * 0.01)
+        return RepoStatus(path=path, name=path.name)
+
+    async def collect(paths: list[Path]) -> list[RepoStatus]:
+        return [result async for result in iter_statuses(paths, limit=3)]
+
+    monkeypatch.setattr(git_module, "gather_status", delayed_status)
+    paths = [tmp_path / name for name in ("3", "1", "2")]
+
+    results = asyncio.run(collect(paths))
+
+    assert [result.name for result in results] == ["1", "2", "3"]
+
+
+def test_iter_statuses_rejects_invalid_limit() -> None:
+    async def collect() -> list[RepoStatus]:
+        return [result async for result in iter_statuses([], limit=0)]
+
+    with pytest.raises(ValueError, match="at least 1"):
+        asyncio.run(collect())

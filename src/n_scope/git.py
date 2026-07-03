@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -178,6 +179,30 @@ async def gather_all(
             return await gather_status(path)
 
     return list(await asyncio.gather(*(gather_one(path) for path in paths)))
+
+
+async def iter_statuses(
+    paths: list[Path], limit: int = DEFAULT_CONCURRENCY
+) -> AsyncIterator[RepoStatus]:
+    """Yield statuses as they complete while enforcing the concurrency limit."""
+    if limit < 1:
+        raise ValueError("concurrency limit must be at least 1")
+
+    semaphore = asyncio.Semaphore(limit)
+
+    async def gather_one(path: Path) -> RepoStatus:
+        async with semaphore:
+            return await gather_status(path)
+
+    tasks = [asyncio.create_task(gather_one(path)) for path in paths]
+    try:
+        for task in asyncio.as_completed(tasks):
+            yield await task
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def _looks_like_bare_repo(path: Path) -> bool:
