@@ -8,7 +8,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widgets import DataTable, Footer, Header, Static
 
-from .git import RepoStatus, find_repos, gather_all
+from .git import RepoStatus, find_repos_many, gather_all
 
 
 def status_cell(repo: RepoStatus) -> Text:
@@ -69,13 +69,33 @@ class NScopeApp(App):
         Binding("S", "sort_status", "Sort: status"),
     ]
 
-    def __init__(self, root: Path, max_depth: int):
+    def __init__(
+        self,
+        roots: tuple[Path, ...],
+        max_depth: int,
+        sort_mode: str = "status",
+        theme: str = "textual-dark",
+    ):
         super().__init__()
-        self.root = root
+        if not roots:
+            raise ValueError("at least one root is required")
+        if sort_mode not in {"name", "status"}:
+            raise ValueError(f"unknown sort mode: {sort_mode}")
+        if theme not in self.available_themes:
+            choices = ", ".join(sorted(self.available_themes))
+            raise ValueError(f"unknown theme {theme!r}; available themes: {choices}")
+        self.theme = theme
+        self.roots = roots
         self.max_depth = max_depth
         self.repos: list[RepoStatus] = []
         self.filter_mode = "all"
-        self.sort_mode = "status"
+        self.sort_mode = sort_mode
+
+    @property
+    def roots_label(self) -> str:
+        if len(self.roots) == 1:
+            return str(self.roots[0])
+        return f"{len(self.roots)} roots"
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -97,17 +117,17 @@ class NScopeApp(App):
         bar = self.query_one("#header_bar", Static)
         bar.add_class("scanning")
         bar.update(
-            f"[bold]n-scope[/] · scanning [cyan]{escape(str(self.root))}[/] "
+            f"[bold]n-scope[/] · scanning [cyan]{escape(self.roots_label)}[/] "
             f"(depth {self.max_depth})…"
         )
 
-        paths = find_repos(self.root, self.max_depth)
+        paths = find_repos_many(self.roots, self.max_depth)
         if not paths:
             self.repos = []
             self.populate_table()
             bar.remove_class("scanning")
             bar.update(
-                f"[bold red]no git repos found under[/] {escape(str(self.root))}"
+                f"[bold red]no git repos found under[/] {escape(self.roots_label)}"
             )
             return
 
@@ -121,7 +141,7 @@ class NScopeApp(App):
         behind = sum(1 for r in self.repos if r.behind)
         bar.remove_class("scanning")
         bar.update(
-            f"[bold]n-scope[/] · [cyan]{escape(str(self.root))}[/] · "
+            f"[bold]n-scope[/] · [cyan]{escape(self.roots_label)}[/] · "
             f"[green]{clean}[/] clean · "
             f"[yellow]{dirty}[/] dirty · "
             f"[cyan]↑{ahead}[/] · [magenta]↓{behind}[/] · "

@@ -6,7 +6,13 @@ from pathlib import Path
 import pytest
 
 import n_scope.git as git_module
-from n_scope.git import RepoStatus, find_repos, gather_all, gather_status
+from n_scope.git import (
+    RepoStatus,
+    find_repos,
+    find_repos_many,
+    gather_all,
+    gather_status,
+)
 
 
 def status(path: Path) -> RepoStatus:
@@ -173,6 +179,17 @@ def test_find_repos_respects_depth_and_ignores_hidden_directories(
 
     assert find_repos(tmp_path, 1) == [shallow.path]
     assert find_repos(tmp_path, 2) == [nested.path, shallow.path]
+
+
+def test_find_repos_many_deduplicates_overlapping_roots(
+    git_repo_factory, tmp_path: Path
+) -> None:
+    first = git_repo_factory.create("first")
+    second = git_repo_factory.create("second")
+
+    repos = find_repos_many((tmp_path, first.path, tmp_path), max_depth=1)
+
+    assert repos == [first.path.resolve(), second.path.resolve()]
 
 
 def test_find_repos_skips_directory_when_permission_is_denied(

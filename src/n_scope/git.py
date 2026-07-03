@@ -207,3 +207,16 @@ def find_repos(root: Path, max_depth: int) -> list[Path]:
 
     walk(root, 0)
     return repos
+
+
+def find_repos_many(roots: tuple[Path, ...], max_depth: int) -> list[Path]:
+    """Find repositories under multiple roots, removing resolved duplicates."""
+    repos: list[Path] = []
+    seen: set[Path] = set()
+    for root in roots:
+        for repo in find_repos(root, max_depth):
+            resolved = repo.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                repos.append(resolved)
+    return repos
