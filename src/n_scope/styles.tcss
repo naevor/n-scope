@@ -32,3 +32,34 @@ DataTable {
     background: $boost;
     padding: 1 2;
 }
+
+ConfirmScreen {
+    align: center middle;
+}
+
+#confirm_dialog {
+    width: 64;
+    height: auto;
+    border: heavy $error;
+    background: $surface;
+    padding: 1 2;
+}
+
+#confirm_title {
+    text-style: bold;
+    color: $error;
+    margin-bottom: 1;
+}
+
+#confirm_message {
+    margin-bottom: 1;
+}
+
+#confirm_buttons {
+    align-horizontal: right;
+    height: auto;
+}
+
+#confirm_buttons Button {
+    margin-left: 1;
+}

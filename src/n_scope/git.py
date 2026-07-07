@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 DEFAULT_CONCURRENCY = 16
 
@@ -45,6 +46,26 @@ class RepoStatus:
         )
 
 
+@dataclass(frozen=True)
+class GitOperationResult:
+    path: Path
+    name: str
+    operation: str
+    returncode: int
+    stdout: str = ""
+    stderr: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.returncode == 0
+
+    @property
+    def message(self) -> str:
+        if self.ok:
+            return (self.stdout or self.stderr or "ok").splitlines()[-1][:200]
+        return _git_error(self.stderr or self.stdout, f"{self.operation} failed")
+
+
 async def run_git(repo: Path, *args: str) -> tuple[int, str, str]:
     """Run a git command in *repo* and return its code, stdout, and stderr."""
     proc = await asyncio.create_subprocess_exec(
@@ -58,6 +79,90 @@ async def run_git(repo: Path, *args: str) -> tuple[int, str, str]:
         stdout.decode("utf-8", errors="replace").rstrip("\r\n"),
         stderr.decode("utf-8", errors="replace").rstrip("\r\n"),
     )
+
+
+async def run_git_operation(
+    repo: Path, operation: str, *args: str
+) -> GitOperationResult:
+    """Run a mutating git operation and return a structured result."""
+    try:
+        returncode, stdout, stderr = await run_git(repo, *args)
+    except Exception as error:  # noqa: BLE001
+        return GitOperationResult(
+            path=repo,
+            name=repo.name,
+            operation=operation,
+            returncode=1,
+            stderr=type(error).__name__,
+        )
+    return GitOperationResult(
+        path=repo,
+        name=repo.name,
+        operation=operation,
+        returncode=returncode,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
+async def fetch_repo(repo: Path) -> GitOperationResult:
+    """Fetch all remotes for one repo without changing the worktree."""
+    return await run_git_operation(repo, "fetch", "fetch", "--all", "--prune")
+
+
+async def pull_ff_only_repo(repo: Path) -> GitOperationResult:
+    """Pull one repo, refusing merges and conflicts."""
+    return await run_git_operation(repo, "pull", "pull", "--ff-only")
+
+
+async def _run_operation(
+    repo: Path, operation: Literal["fetch", "pull"]
+) -> GitOperationResult:
+    if operation == "fetch":
+        return await fetch_repo(repo)
+    if operation == "pull":
+        return await pull_ff_only_repo(repo)
+    raise ValueError(f"unknown git operation: {operation}")
+
+
+async def iter_repo_operations(
+    paths: list[Path],
+    operation: Literal["fetch", "pull"],
+    limit: int = DEFAULT_CONCURRENCY,
+) -> AsyncIterator[GitOperationResult]:
+    """Yield git operation results as they complete, with bounded concurrency."""
+    if limit < 1:
+        raise ValueError("concurrency limit must be at least 1")
+
+    semaphore = asyncio.Semaphore(limit)
+
+    async def run_one(path: Path) -> GitOperationResult:
+        async with semaphore:
+            return await _run_operation(path, operation)
+
+    tasks = [asyncio.create_task(run_one(path)) for path in paths]
+    try:
+        for task in asyncio.as_completed(tasks):
+            yield await task
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def batch_fetch(
+    paths: list[Path], limit: int = DEFAULT_CONCURRENCY
+) -> list[GitOperationResult]:
+    """Fetch repositories concurrently and return results in completion order."""
+    return [result async for result in iter_repo_operations(paths, "fetch", limit)]
+
+
+async def batch_pull_ff_only(
+    paths: list[Path], limit: int = DEFAULT_CONCURRENCY
+) -> list[GitOperationResult]:
+    """Pull repositories with --ff-only concurrently."""
+    return [result async for result in iter_repo_operations(paths, "pull", limit)]
 
 
 def _git_error(stderr: str, fallback: str) -> str:

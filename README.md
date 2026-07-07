@@ -15,6 +15,8 @@
 - Detail panel for the selected repo (path, remote, stashes, full numbers)
 - Bounded async git calls — scans dozens of repos without overwhelming the system
 - Progressive rows and fuzzy name filtering for fast startup and navigation
+- Open the selected repo in `$EDITOR` or a shell, or copy its path
+- Multi-select repositories and run confirmed batch `fetch` / `pull --ff-only`
 
 ## Install
 
@@ -62,6 +64,12 @@ override the configuration, which overrides built-in defaults.
 |-----------|-----------------------|
 | `↑` / `↓` | navigate rows         |
 | `Enter`   | show detail panel     |
+| `Space`   | toggle row selection  |
+| `e`       | open repo in `$EDITOR` |
+| `t`       | open shell in repo    |
+| `c`       | copy repo path        |
+| `f`       | batch fetch selected, or all if none selected |
+| `p`       | batch pull `--ff-only` selected, or all if none selected |
 | `r`       | refresh               |
 | `d`       | filter: dirty only    |
 | `a`       | filter: show all      |

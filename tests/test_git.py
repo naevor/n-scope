@@ -8,11 +8,15 @@ import pytest
 import n_scope.git as git_module
 from n_scope.git import (
     RepoStatus,
+    batch_fetch,
+    batch_pull_ff_only,
+    fetch_repo,
     find_repos,
     find_repos_many,
     gather_all,
     gather_status,
     iter_statuses,
+    pull_ff_only_repo,
 )
 
 
@@ -276,3 +280,48 @@ def test_iter_statuses_rejects_invalid_limit() -> None:
 
     with pytest.raises(ValueError, match="at least 1"):
         asyncio.run(collect())
+
+
+def test_fetch_repo_updates_remote_tracking_state(tracking_repos) -> None:
+    tracking_repos.peer.write("remote.txt", "remote\n")
+    tracking_repos.peer.commit("remote commit")
+    tracking_repos.peer.git("push", "--quiet", "origin", "main")
+
+    before = status(tracking_repos.local.path)
+    assert before.behind == 0
+
+    result = asyncio.run(fetch_repo(tracking_repos.local.path))
+    after = status(tracking_repos.local.path)
+
+    assert result.ok
+    assert after.behind == 1
+    assert after.ahead == 0
+
+
+def test_pull_ff_only_fast_forwards_tracking_repo(tracking_repos) -> None:
+    tracking_repos.peer.write("remote.txt", "remote\n")
+    tracking_repos.peer.commit("remote commit")
+    tracking_repos.peer.git("push", "--quiet", "origin", "main")
+
+    result = asyncio.run(pull_ff_only_repo(tracking_repos.local.path))
+
+    assert result.ok
+    assert (tracking_repos.local.path / "remote.txt").read_text() == "remote\n"
+    assert status(tracking_repos.local.path).is_clean_and_synced
+
+
+def test_pull_ff_only_refuses_diverged_history(diverged_repos) -> None:
+    result = asyncio.run(pull_ff_only_repo(diverged_repos.local.path))
+    after = status(diverged_repos.local.path)
+
+    assert not result.ok
+    assert "fast-forward" in result.message
+    assert after.ahead == 1
+    assert after.behind == 1
+
+
+def test_batch_fetch_and_pull_reject_invalid_limit() -> None:
+    with pytest.raises(ValueError, match="at least 1"):
+        asyncio.run(batch_fetch([], limit=0))
+    with pytest.raises(ValueError, match="at least 1"):
+        asyncio.run(batch_pull_ff_only([], limit=0))
